@@ -246,23 +246,6 @@ const RadiusFeeModal = ({
             </div>
           </div>
 
-          {/* Commission Breakdown Type */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Commission Breakdown Type
-            </label>
-            <div className="relative">
-              <select value={commissionBreakdownType} onChange={e => setCommissionBreakdownType(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {COMMISSION_BREAKDOWN_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
           {/* Fee Type */}
           <div className="flex flex-col gap-2">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
@@ -564,23 +547,6 @@ const TeamRadiusFeeModal = ({
             <div className="relative">
               <select value={whoPays} onChange={e => setWhoPays(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
                 {WHO_PAYS_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Commission Breakdown Type */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Commission Breakdown Type
-            </label>
-            <div className="relative">
-              <select value={commissionBreakdownType} onChange={e => setCommissionBreakdownType(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {COMMISSION_BREAKDOWN_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>)}
               </select>
               <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
                 <ChevronDown className="w-4 h-4 text-gray-400" />
