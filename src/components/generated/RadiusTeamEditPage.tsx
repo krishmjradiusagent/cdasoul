@@ -17,6 +17,7 @@ interface TeamMember {
   progressToInternal: number;
 }
 interface RepAmount {
+  feeType: string;
   flat: string;
   percent: string;
 }
@@ -26,16 +27,14 @@ interface RadiusFee {
   representationTypes: string[];
   whoPays: string;
   commissionBreakdownType: string;
-  feeType: string;
   amounts: Record<string, RepAmount>;
 }
 interface AuditFee {
   representationTypes: string[];
   whoPays: string;
-  feeType: string;
   amounts: Record<string, RepAmount>;
 }
-const blankAmt = (): RepAmount => ({ flat: "", percent: "" });
+const blankAmt = (): RepAmount => ({ feeType: "Flat", flat: "", percent: "" });
 
 // --- Mock Data ---
 
@@ -152,35 +151,58 @@ const getRepTypeState = (type: string, currentSelection: string[], usedTypes: st
 // --- Per-Rep Amount Inputs ---
 
 interface PerRepAmountInputsProps {
-  feeType: string;
   reps: string[];
   amounts: Record<string, RepAmount>;
   setRepAmt: (rep: string, key: keyof RepAmount, val: string) => void;
 }
-const PerRepAmountInputs = ({ feeType, reps, amounts, setRepAmt }: PerRepAmountInputsProps) => {
+const PerRepAmountInputs = ({ reps, amounts, setRepAmt }: PerRepAmountInputsProps) => {
   if (reps.length === 0) {
-    return <p className="text-xs text-gray-400 italic">Select at least one representation type to enter amounts.</p>;
+    return <p className="text-xs text-gray-400 italic">Select at least one representation type to set up a fee.</p>;
   }
-  return <div className="flex flex-col gap-4">
+  return <div className="flex flex-col gap-5">
       {reps.map(rep => {
       const a = amounts[rep] ?? blankAmt();
-      return <div key={rep} className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{rep}</label>
-            {feeType === "Both" ? <div className="flex gap-3">
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white flex-1">
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                  <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
+      const ft = a.feeType || "Flat";
+      return <div key={rep} className="flex flex-col gap-3 border border-gray-200 rounded-md p-3 bg-gray-50/40">
+            <div className="text-xs font-bold text-gray-700 uppercase tracking-wider">{rep}</div>
+            <div className="flex flex-col gap-2">
+              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fee Type</label>
+              <div className="relative">
+                <select value={ft} onChange={e => setRepAmt(rep, "feeType", e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  {FEE_TYPE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
                 </div>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white flex-1">
-                  <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
+              </div>
+            </div>
+            {ft === "Both" ? <div className="flex gap-3">
+                <div className="flex flex-col gap-2 flex-1">
+                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Flat Amount</label>
+                  <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
+                    <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
+                    <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
+                  </div>
                 </div>
-              </div> : feeType === "Flat" ? <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-              </div> : <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
+                <div className="flex flex-col gap-2 flex-1">
+                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Percentage</label>
+                  <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
+                    <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
+                    <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
+                  </div>
+                </div>
+              </div> : ft === "Flat" ? <div className="flex flex-col gap-2">
+                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Flat Amount</label>
+                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
+                  <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
+                  <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
+                </div>
+              </div> : <div className="flex flex-col gap-2">
+                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Percentage</label>
+                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
+                  <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
+                  <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
+                </div>
               </div>}
           </div>;
     })}
@@ -210,7 +232,6 @@ const RadiusFeeModal = ({
   const [representationTypes, setRepresentationTypes] = React.useState<string[]>(editingFee?.representationTypes ?? []);
   const [whoPays, setWhoPays] = React.useState<string>(editingFee?.whoPays ?? "Agent Pays");
   const [commissionBreakdownType, setCommissionBreakdownType] = React.useState<string>(editingFee?.commissionBreakdownType ?? "Full Transparency");
-  const [feeType, setFeeType] = React.useState<string>(editingFee?.feeType ?? "Flat");
   const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(editingFee?.amounts ?? {});
   const toggleRepType = (type: string) => {
     const {
@@ -241,7 +262,6 @@ const RadiusFeeModal = ({
       representationTypes,
       whoPays,
       commissionBreakdownType,
-      feeType,
       amounts: cleanAmounts
     });
   };
@@ -300,23 +320,8 @@ const RadiusFeeModal = ({
             </div>
           </div>
 
-          {/* Fee Type */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Fee Type
-            </label>
-            <div className="relative">
-              <select value={feeType} onChange={e => setFeeType(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {FEE_TYPE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Dynamic Fee Inputs (per representation type) */}
-          <PerRepAmountInputs feeType={feeType} reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
+          {/* Per-representation Fee Type + Amount */}
+          <PerRepAmountInputs reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
         </div>
 
         {/* Modal Footer */}
@@ -346,7 +351,6 @@ const AuditFeeModal = ({
 }: AuditFeeModalProps) => {
   const [representationTypes, setRepresentationTypes] = React.useState<string[]>(currentFee.representationTypes);
   const [whoPays, setWhoPays] = React.useState<string>(currentFee.whoPays);
-  const [feeType, setFeeType] = React.useState<string>(currentFee.feeType);
   const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(currentFee.amounts ?? {});
   const toggleRepType = (type: string) => {
     const isOn = representationTypes.includes(type);
@@ -369,7 +373,6 @@ const AuditFeeModal = ({
     onSave({
       representationTypes,
       whoPays,
-      feeType,
       amounts: cleanAmounts
     });
   };
@@ -417,23 +420,8 @@ const AuditFeeModal = ({
             </div>
           </div>
 
-          {/* Fee Type */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Fee Type
-            </label>
-            <div className="relative">
-              <select value={feeType} onChange={e => setFeeType(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {FEE_TYPE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Dynamic Fee Inputs (per representation type) */}
-          <PerRepAmountInputs feeType={feeType} reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
+          {/* Per-representation Fee Type + Amount */}
+          <PerRepAmountInputs reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
         </div>
 
         {/* Footer */}
@@ -468,7 +456,6 @@ const TeamRadiusFeeModal = ({
   const [representationTypes, setRepresentationTypes] = React.useState<string[]>(editingFee?.representationTypes ?? []);
   const [whoPays, setWhoPays] = React.useState<string>(editingFee?.whoPays ?? "Agent Pays");
   const [commissionBreakdownType, setCommissionBreakdownType] = React.useState<string>(editingFee?.commissionBreakdownType ?? "Full Transparency");
-  const [feeType, setFeeType] = React.useState<string>(editingFee?.feeType ?? "Flat");
   const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(editingFee?.amounts ?? {});
   const toggleRepType = (type: string) => {
     const {
@@ -498,7 +485,6 @@ const TeamRadiusFeeModal = ({
       representationTypes,
       whoPays,
       commissionBreakdownType,
-      feeType,
       amounts: cleanAmounts
     });
   };
@@ -554,23 +540,8 @@ const TeamRadiusFeeModal = ({
             </div>
           </div>
 
-          {/* Fee Type */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Fee Type
-            </label>
-            <div className="relative">
-              <select value={feeType} onChange={e => setFeeType(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {FEE_TYPE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Dynamic Fee Inputs (per representation type) */}
-          <PerRepAmountInputs feeType={feeType} reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
+          {/* Per-representation Fee Type + Amount */}
+          <PerRepAmountInputs reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
         </div>
 
         {/* Modal Footer */}
@@ -888,20 +859,20 @@ const getInitialToggleStates = (): Record<string, boolean> => {
   });
   return states;
 };
-const formatRepAmount = (feeType: string, amt: RepAmount | undefined): string => {
+const formatRepAmount = (amt: RepAmount | undefined): string => {
   const a = amt ?? blankAmt();
-  if (feeType === "Flat") return a.flat ? `$${a.flat}` : "";
-  if (feeType === "Percentage") return a.percent ? `${a.percent}%` : "";
-  if (feeType === "Both") {
+  if (a.feeType === "Flat") return a.flat ? `$${a.flat}` : "";
+  if (a.feeType === "Percentage") return a.percent ? `${a.percent}%` : "";
+  if (a.feeType === "Both") {
     if (!a.flat && !a.percent) return "";
     return `$${a.flat || "0"} / ${a.percent || "0"}%`;
   }
   return "";
 };
-const getFeeAmountLabel = (fee: { feeType: string; representationTypes: string[]; amounts: Record<string, RepAmount> }): string => {
+const getFeeAmountLabel = (fee: { representationTypes: string[]; amounts: Record<string, RepAmount> }): string => {
   const parts: string[] = [];
   fee.representationTypes.forEach(rep => {
-    const s = formatRepAmount(fee.feeType, fee.amounts?.[rep]);
+    const s = formatRepAmount(fee.amounts?.[rep]);
     if (s) parts.push(`${rep} ${s}`);
   });
   return parts.join(" · ");
@@ -932,7 +903,6 @@ export const RadiusTeamEditPage: React.FC = () => {
   const [auditFee, setAuditFee] = React.useState<AuditFee>({
     representationTypes: [],
     whoPays: "Agent Pays",
-    feeType: "Flat",
     amounts: {}
   });
   const handleToggle = (id: string) => {
