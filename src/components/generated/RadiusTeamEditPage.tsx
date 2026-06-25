@@ -16,6 +16,10 @@ interface TeamMember {
   preRadiusProgress: number;
   progressToInternal: number;
 }
+interface RepAmount {
+  flat: string;
+  percent: string;
+}
 interface RadiusFee {
   feeId: string;
   feeName: string;
@@ -23,16 +27,15 @@ interface RadiusFee {
   whoPays: string;
   commissionBreakdownType: string;
   feeType: string;
-  flatAmount: string;
-  percentAmount: string;
+  amounts: Record<string, RepAmount>;
 }
 interface AuditFee {
   representationTypes: string[];
   whoPays: string;
   feeType: string;
-  flatAmount: string;
-  percentAmount: string;
+  amounts: Record<string, RepAmount>;
 }
+const blankAmt = (): RepAmount => ({ flat: "", percent: "" });
 
 // --- Mock Data ---
 
@@ -146,6 +149,44 @@ const getRepTypeState = (type: string, currentSelection: string[], usedTypes: st
   };
 };
 
+// --- Per-Rep Amount Inputs ---
+
+interface PerRepAmountInputsProps {
+  feeType: string;
+  reps: string[];
+  amounts: Record<string, RepAmount>;
+  setRepAmt: (rep: string, key: keyof RepAmount, val: string) => void;
+}
+const PerRepAmountInputs = ({ feeType, reps, amounts, setRepAmt }: PerRepAmountInputsProps) => {
+  if (reps.length === 0) {
+    return <p className="text-xs text-gray-400 italic">Select at least one representation type to enter amounts.</p>;
+  }
+  return <div className="flex flex-col gap-4">
+      {reps.map(rep => {
+      const a = amounts[rep] ?? blankAmt();
+      return <div key={rep} className="flex flex-col gap-2">
+            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{rep}</label>
+            {feeType === "Both" ? <div className="flex gap-3">
+                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white flex-1">
+                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
+                  <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
+                </div>
+                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white flex-1">
+                  <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
+                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
+                </div>
+              </div> : feeType === "Flat" ? <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
+                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
+                <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
+              </div> : <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
+                <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
+                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
+              </div>}
+          </div>;
+    })}
+    </div>;
+};
+
 // --- Modal ---
 
 interface RadiusFeeModalProps {
@@ -170,16 +211,30 @@ const RadiusFeeModal = ({
   const [whoPays, setWhoPays] = React.useState<string>(editingFee?.whoPays ?? "Agent Pays");
   const [commissionBreakdownType, setCommissionBreakdownType] = React.useState<string>(editingFee?.commissionBreakdownType ?? "Full Transparency");
   const [feeType, setFeeType] = React.useState<string>(editingFee?.feeType ?? "Flat");
-  const [flatAmount, setFlatAmount] = React.useState<string>(editingFee?.flatAmount ?? "");
-  const [percentAmount, setPercentAmount] = React.useState<string>(editingFee?.percentAmount ?? "");
+  const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(editingFee?.amounts ?? {});
   const toggleRepType = (type: string) => {
     const {
       disabled
     } = getRepTypeState(type, representationTypes, usedTypes);
     if (disabled && !representationTypes.includes(type)) return;
+    const isOn = representationTypes.includes(type);
+    if (isOn && representationTypes.length === 1) return;
     setRepresentationTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+    setAmounts(prev => {
+      const next = { ...prev };
+      if (isOn) delete next[type];
+      else if (!next[type]) next[type] = blankAmt();
+      return next;
+    });
   };
+  const setRepAmt = (rep: string, key: keyof RepAmount, val: string) => {
+    setAmounts(prev => ({ ...prev, [rep]: { ...(prev[rep] ?? blankAmt()), [key]: val } }));
+  };
+  const canSave = representationTypes.length > 0;
   const handleSave = () => {
+    if (!canSave) return;
+    const cleanAmounts: Record<string, RepAmount> = {};
+    representationTypes.forEach(r => { cleanAmounts[r] = amounts[r] ?? blankAmt(); });
     onSave(memberId, {
       feeId: editingFee?.feeId ?? `fee-${Date.now()}`,
       feeName,
@@ -187,8 +242,7 @@ const RadiusFeeModal = ({
       whoPays,
       commissionBreakdownType,
       feeType,
-      flatAmount,
-      percentAmount
+      amounts: cleanAmounts
     });
   };
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => {
@@ -261,51 +315,8 @@ const RadiusFeeModal = ({
             </div>
           </div>
 
-          {/* Dynamic Fee Inputs */}
-          {feeType === "Both" ? <div className="flex gap-3">
-              <div className="flex flex-col gap-2 flex-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Flat Amount
-                </label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">
-                    $
-                  </span>
-                  <input type="number" value={flatAmount} onChange={e => setFlatAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 flex-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Percentage
-                </label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <input type="number" value={percentAmount} onChange={e => setPercentAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">
-                    %
-                  </span>
-                </div>
-              </div>
-            </div> : feeType === "Flat" ? <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Flat Amount
-              </label>
-              <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">
-                  $
-                </span>
-                <input type="number" value={flatAmount} onChange={e => setFlatAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-              </div>
-            </div> : <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Percentage Amount
-              </label>
-              <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <input type="number" value={percentAmount} onChange={e => setPercentAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">
-                  %
-                </span>
-              </div>
-            </div>}
+          {/* Dynamic Fee Inputs (per representation type) */}
+          <PerRepAmountInputs feeType={feeType} reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
         </div>
 
         {/* Modal Footer */}
@@ -336,18 +347,30 @@ const AuditFeeModal = ({
   const [representationTypes, setRepresentationTypes] = React.useState<string[]>(currentFee.representationTypes);
   const [whoPays, setWhoPays] = React.useState<string>(currentFee.whoPays);
   const [feeType, setFeeType] = React.useState<string>(currentFee.feeType);
-  const [flatAmount, setFlatAmount] = React.useState<string>(currentFee.flatAmount);
-  const [percentAmount, setPercentAmount] = React.useState<string>(currentFee.percentAmount);
+  const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(currentFee.amounts ?? {});
   const toggleRepType = (type: string) => {
+    const isOn = representationTypes.includes(type);
+    if (isOn && representationTypes.length === 1) return;
     setRepresentationTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+    setAmounts(prev => {
+      const next = { ...prev };
+      if (isOn) delete next[type];
+      else if (!next[type]) next[type] = blankAmt();
+      return next;
+    });
+  };
+  const setRepAmt = (rep: string, key: keyof RepAmount, val: string) => {
+    setAmounts(prev => ({ ...prev, [rep]: { ...(prev[rep] ?? blankAmt()), [key]: val } }));
   };
   const handleSave = () => {
+    if (representationTypes.length === 0) return;
+    const cleanAmounts: Record<string, RepAmount> = {};
+    representationTypes.forEach(r => { cleanAmounts[r] = amounts[r] ?? blankAmt(); });
     onSave({
       representationTypes,
       whoPays,
       feeType,
-      flatAmount,
-      percentAmount
+      amounts: cleanAmounts
     });
   };
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => {
@@ -409,43 +432,8 @@ const AuditFeeModal = ({
             </div>
           </div>
 
-          {/* Dynamic Fee Inputs */}
-          {feeType === "Both" ? <div className="flex gap-3">
-              <div className="flex flex-col gap-2 flex-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Flat Amount
-                </label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                  <input type="number" value={flatAmount} onChange={e => setFlatAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 flex-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Percentage
-                </label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <input type="number" value={percentAmount} onChange={e => setPercentAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
-                </div>
-              </div>
-            </div> : feeType === "Flat" ? <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Flat Amount
-              </label>
-              <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                <input type="number" value={flatAmount} onChange={e => setFlatAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-              </div>
-            </div> : <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Percentage Amount
-              </label>
-              <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <input type="number" value={percentAmount} onChange={e => setPercentAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
-              </div>
-            </div>}
+          {/* Dynamic Fee Inputs (per representation type) */}
+          <PerRepAmountInputs feeType={feeType} reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
         </div>
 
         {/* Footer */}
@@ -481,16 +469,29 @@ const TeamRadiusFeeModal = ({
   const [whoPays, setWhoPays] = React.useState<string>(editingFee?.whoPays ?? "Agent Pays");
   const [commissionBreakdownType, setCommissionBreakdownType] = React.useState<string>(editingFee?.commissionBreakdownType ?? "Full Transparency");
   const [feeType, setFeeType] = React.useState<string>(editingFee?.feeType ?? "Flat");
-  const [flatAmount, setFlatAmount] = React.useState<string>(editingFee?.flatAmount ?? "");
-  const [percentAmount, setPercentAmount] = React.useState<string>(editingFee?.percentAmount ?? "");
+  const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(editingFee?.amounts ?? {});
   const toggleRepType = (type: string) => {
     const {
       disabled
     } = getRepTypeState(type, representationTypes, usedTypes);
     if (disabled && !representationTypes.includes(type)) return;
+    const isOn = representationTypes.includes(type);
+    if (isOn && representationTypes.length === 1) return;
     setRepresentationTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
+    setAmounts(prev => {
+      const next = { ...prev };
+      if (isOn) delete next[type];
+      else if (!next[type]) next[type] = blankAmt();
+      return next;
+    });
+  };
+  const setRepAmt = (rep: string, key: keyof RepAmount, val: string) => {
+    setAmounts(prev => ({ ...prev, [rep]: { ...(prev[rep] ?? blankAmt()), [key]: val } }));
   };
   const handleSave = () => {
+    if (representationTypes.length === 0) return;
+    const cleanAmounts: Record<string, RepAmount> = {};
+    representationTypes.forEach(r => { cleanAmounts[r] = amounts[r] ?? blankAmt(); });
     onSave({
       feeId: editingFee?.feeId ?? `team-fee-${Date.now()}`,
       feeName,
@@ -498,8 +499,7 @@ const TeamRadiusFeeModal = ({
       whoPays,
       commissionBreakdownType,
       feeType,
-      flatAmount,
-      percentAmount
+      amounts: cleanAmounts
     });
   };
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => {
@@ -569,43 +569,8 @@ const TeamRadiusFeeModal = ({
             </div>
           </div>
 
-          {/* Dynamic Fee Inputs */}
-          {feeType === "Both" ? <div className="flex gap-3">
-              <div className="flex flex-col gap-2 flex-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Flat Amount
-                </label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                  <input type="number" value={flatAmount} onChange={e => setFlatAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                </div>
-              </div>
-              <div className="flex flex-col gap-2 flex-1">
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Percentage
-                </label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <input type="number" value={percentAmount} onChange={e => setPercentAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                  <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
-                </div>
-              </div>
-            </div> : feeType === "Flat" ? <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Flat Amount
-              </label>
-              <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                <input type="number" value={flatAmount} onChange={e => setFlatAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-              </div>
-            </div> : <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Percentage Amount
-              </label>
-              <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                <input type="number" value={percentAmount} onChange={e => setPercentAmount(e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
-              </div>
-            </div>}
+          {/* Dynamic Fee Inputs (per representation type) */}
+          <PerRepAmountInputs feeType={feeType} reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
         </div>
 
         {/* Modal Footer */}
@@ -923,11 +888,23 @@ const getInitialToggleStates = (): Record<string, boolean> => {
   });
   return states;
 };
-const getFeeAmountLabel = (fee: RadiusFee): string => {
-  if (fee.feeType === "Flat" && fee.flatAmount) return `$${fee.flatAmount}`;
-  if (fee.feeType === "Percentage" && fee.percentAmount) return `${fee.percentAmount}%`;
-  if (fee.feeType === "Both" && (fee.flatAmount || fee.percentAmount)) return `$${fee.flatAmount || "0"} / ${fee.percentAmount || "0"}%`;
+const formatRepAmount = (feeType: string, amt: RepAmount | undefined): string => {
+  const a = amt ?? blankAmt();
+  if (feeType === "Flat") return a.flat ? `$${a.flat}` : "";
+  if (feeType === "Percentage") return a.percent ? `${a.percent}%` : "";
+  if (feeType === "Both") {
+    if (!a.flat && !a.percent) return "";
+    return `$${a.flat || "0"} / ${a.percent || "0"}%`;
+  }
   return "";
+};
+const getFeeAmountLabel = (fee: { feeType: string; representationTypes: string[]; amounts: Record<string, RepAmount> }): string => {
+  const parts: string[] = [];
+  fee.representationTypes.forEach(rep => {
+    const s = formatRepAmount(fee.feeType, fee.amounts?.[rep]);
+    if (s) parts.push(`${rep} ${s}`);
+  });
+  return parts.join(" · ");
 };
 interface ModalState {
   memberId: string;
@@ -956,8 +933,7 @@ export const RadiusTeamEditPage: React.FC = () => {
     representationTypes: [],
     whoPays: "Agent Pays",
     feeType: "Flat",
-    flatAmount: "",
-    percentAmount: ""
+    amounts: {}
   });
   const handleToggle = (id: string) => {
     setToggleStates(prev => ({
@@ -1049,12 +1025,8 @@ export const RadiusTeamEditPage: React.FC = () => {
     return getUsedTypes(teamRadiusFees, editingTeamFee?.feeId);
   }, [teamRadiusFees, editingTeamFee]);
   const auditFeeLabel = React.useMemo(() => {
-    if (auditFee.feeType === "Flat" && auditFee.flatAmount) return `$${auditFee.flatAmount}`;
-    if (auditFee.feeType === "Percentage" && auditFee.percentAmount) return `${auditFee.percentAmount}%`;
-    if (auditFee.feeType === "Both" && (auditFee.flatAmount || auditFee.percentAmount)) {
-      return `$${auditFee.flatAmount || "0"} / ${auditFee.percentAmount || "0"}%`;
-    }
-    return null;
+    const label = getFeeAmountLabel(auditFee);
+    return label || null;
   }, [auditFee]);
 
   // Team fees: can add more only if not all types are covered
