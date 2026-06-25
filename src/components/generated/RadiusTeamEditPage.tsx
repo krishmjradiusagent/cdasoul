@@ -810,23 +810,26 @@ const TeamTable = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {fees.map(fee => {
-                      const amountLabel = getFeeAmountLabel(fee);
-                      const repLabel = fee.representationTypes.length > 0 ? fee.representationTypes.join(" & ") : "—";
-                      return <tr key={fee.feeId}>
-                              <td className="px-3 py-2 text-gray-800">{repLabel}</td>
-                              <td className="px-3 py-2 text-gray-600">{amountLabel || "—"}</td>
-                              <td className="px-3 py-2">
-                                <div className="flex items-center justify-end gap-0.5">
-                                  <button type="button" onClick={() => onEditFee(member.id, fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit fee">
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button type="button" onClick={() => onDeleteFee(member.id, fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete fee">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>;
+                        {fees.flatMap(fee => {
+                      const reps = fee.representationTypes.length > 0 ? fee.representationTypes : ["—"];
+                      return reps.map(rep => {
+                        const amt = fee.amounts?.[rep];
+                        const amountLabel = formatRepAmount(amt);
+                        return <tr key={`${fee.feeId}-${rep}`}>
+                                  <td className="px-3 py-2 text-gray-800">{rep}</td>
+                                  <td className="px-3 py-2 text-gray-600">{amountLabel || "—"}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center justify-end gap-0.5">
+                                      <button type="button" onClick={() => onEditFee(member.id, fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit fee">
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button type="button" onClick={() => onDeleteFee(member.id, fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete fee">
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>;
+                      });
                     })}
                       </tbody>
                     </table>
@@ -1121,23 +1124,26 @@ export const RadiusTeamEditPage: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {teamRadiusFees.map(fee => {
-                      const amountLabel = getFeeAmountLabel(fee);
-                      const repLabel = fee.representationTypes.length > 0 ? fee.representationTypes.join(" & ") : "—";
-                      return <tr key={fee.feeId}>
-                              <td className="px-3 py-2 text-gray-800">{repLabel}</td>
-                              <td className="px-3 py-2 text-gray-600">{amountLabel || "—"}</td>
-                              <td className="px-3 py-2">
-                                <div className="flex items-center justify-end gap-0.5">
-                                  <button type="button" onClick={() => handleOpenEditTeamFee(fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit team radius fee">
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                  <button type="button" onClick={() => handleDeleteTeamFee(fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete team radius fee">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>;
+                        {teamRadiusFees.flatMap(fee => {
+                      const reps = fee.representationTypes.length > 0 ? fee.representationTypes : ["—"];
+                      return reps.map(rep => {
+                        const amt = fee.amounts?.[rep];
+                        const amountLabel = formatRepAmount(amt);
+                        return <tr key={`${fee.feeId}-${rep}`}>
+                                  <td className="px-3 py-2 text-gray-800">{rep}</td>
+                                  <td className="px-3 py-2 text-gray-600">{amountLabel || "—"}</td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex items-center justify-end gap-0.5">
+                                      <button type="button" onClick={() => handleOpenEditTeamFee(fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit team radius fee">
+                                        <Pencil className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button type="button" onClick={() => handleDeleteTeamFee(fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete team radius fee">
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>;
+                      });
                     })}
                       </tbody>
                     </table>
