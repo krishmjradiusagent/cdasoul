@@ -108,17 +108,47 @@ const CO_AGENT_SPLIT_OPTIONS: RadiusFee["coAgentSplits"][] = ["Split equally", "
 interface FeeModalProps {
   editingFee: RadiusFee | null;
   subtitle?: string;
-  usedRepTypes?: RadiusFee["representationType"][];
+  usedFeeKeys?: string[];
+  scope?: "team" | "member";
+  teamFeeNames?: string[];
   onSave: (fee: RadiusFee) => void;
   onClose: () => void;
 }
-const FeeModal = ({ editingFee, subtitle, usedRepTypes = [], onSave, onClose }: FeeModalProps) => {
+const TEAM_FEE_NAME_PRESETS = ["Radius Fee", "Audit Fee", "Other Fee"];
+const feeKey = (name: string, rep: RadiusFee["representationType"]) => `${name}::${rep}`;
+const FeeModal = ({ editingFee, subtitle, usedFeeKeys = [], scope = "team", teamFeeNames = [], onSave, onClose }: FeeModalProps) => {
   const isEditing = editingFee !== null;
-  const defaultRep = (REPRESENTATION_TYPE_OPTIONS.find(r => !usedRepTypes.includes(r)) ?? "Buyer") as RadiusFee["representationType"];
-  const [fee, setFee] = React.useState<RadiusFee>(() => editingFee ?? { feeId: `fee-${Date.now()}`, ...blankFee(), representationType: defaultRep });
+  const editingKey = editingFee ? feeKey(editingFee.feeName, editingFee.representationType) : null;
+  const isKeyTaken = (name: string, rep: RadiusFee["representationType"]) => {
+    const k = feeKey(name, rep);
+    return k !== editingKey && usedFeeKeys.includes(k);
+  };
+  const [fee, setFee] = React.useState<RadiusFee>(() => editingFee ?? { feeId: `fee-${Date.now()}`, ...blankFee() });
+
+  // Fee Name dropdown state
+  const initialPickedFromPreset = isEditing ? TEAM_FEE_NAME_PRESETS.includes(editingFee!.feeName) : false;
+  const initialPickedFromTeam = isEditing && scope === "member" ? teamFeeNames.includes(editingFee!.feeName) : false;
+  const initialFeeNameChoice: string = scope === "team"
+    ? (initialPickedFromPreset ? editingFee!.feeName : (isEditing ? "Other Fee" : ""))
+    : (initialPickedFromTeam ? editingFee!.feeName : "");
+  const [feeNameChoice, setFeeNameChoice] = React.useState<string>(initialFeeNameChoice);
+  const showOtherFeeInput = scope === "team" && feeNameChoice === "Other Fee";
+
   const update = <K extends keyof RadiusFee>(key: K, val: RadiusFee[K]) =>
     setFee(prev => ({ ...prev, [key]: val }));
-  const repAlreadyUsed = usedRepTypes.includes(fee.representationType) && fee.representationType !== editingFee?.representationType;
+  const handleFeeNameChoice = (choice: string) => {
+    setFeeNameChoice(choice);
+    if (scope === "team") {
+      if (choice === "Other Fee") {
+        update("feeName", isEditing && !TEAM_FEE_NAME_PRESETS.includes(editingFee!.feeName) ? editingFee!.feeName : "");
+      } else {
+        update("feeName", choice);
+      }
+    } else {
+      update("feeName", choice);
+    }
+  };
+  const repAlreadyUsed = fee.feeName.trim().length > 0 && isKeyTaken(fee.feeName, fee.representationType);
   const canSave = fee.feeName.trim().length > 0 && !repAlreadyUsed;
   const handleSave = () => {
     if (!canSave) return;
@@ -144,21 +174,38 @@ const FeeModal = ({ editingFee, subtitle, usedRepTypes = [], onSave, onClose }: 
           {/* Fee Name */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-semibold text-gray-800">Fee Name</label>
-            <input type="text" value={fee.feeName} onChange={e => update("feeName", e.target.value)} placeholder="e.g., Transaction Coordinator Fee" className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-gray-300 transition-all" />
+            {scope === "member" && teamFeeNames.length === 0 ? (
+              <div className="w-full border border-dashed border-gray-200 rounded px-3 py-2.5 text-sm text-gray-400 bg-gray-50 italic select-none">No team-level fees yet — add one in Team Fee first.</div>
+            ) : (
+              <div className="relative">
+                <select value={feeNameChoice} onChange={e => handleFeeNameChoice(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  <option value="" disabled>Select a fee</option>
+                  {(scope === "team" ? TEAM_FEE_NAME_PRESETS : teamFeeNames).map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
+              </div>
+            )}
+            {showOtherFeeInput && (
+              <input type="text" value={fee.feeName} onChange={e => update("feeName", e.target.value)} placeholder="Enter fee name" className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-gray-300 transition-all" />
+            )}
           </div>
 
           {/* Representation Type */}
           <div className="flex flex-col gap-2">
             <label className="text-sm font-semibold text-gray-800">Representation Type</label>
-            <div className="relative">
-              <select value={fee.representationType} onChange={e => update("representationType", e.target.value as RadiusFee["representationType"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {REPRESENTATION_TYPE_OPTIONS.map(o => {
-                  const used = usedRepTypes.includes(o) && o !== editingFee?.representationType;
-                  return <option key={o} value={o} disabled={used}>{o}{used ? " — already added" : ""}</option>;
-                })}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
-            </div>
+            {scope === "member" && isEditing ? (
+              <div className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-500 bg-gray-50 cursor-not-allowed select-none">{fee.representationType}</div>
+            ) : (
+              <div className="relative">
+                <select value={fee.representationType} onChange={e => update("representationType", e.target.value as RadiusFee["representationType"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  {REPRESENTATION_TYPE_OPTIONS.map(o => {
+                    const used = fee.feeName.trim().length > 0 && isKeyTaken(fee.feeName, o);
+                    return <option key={o} value={o} disabled={used}>{o}{used ? " — already added" : ""}</option>;
+                  })}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
+              </div>
+            )}
           </div>
 
           {/* Fee Type + Amount */}
@@ -751,10 +798,10 @@ export const RadiusTeamEditPage: React.FC = () => {
       </main>
 
       {/* Fee Modal (per-member) */}
-      {modalState !== null && modalMember !== null && <FeeModal editingFee={modalState.editingFee} subtitle={`Configure fee for ${modalMember.name}.`} usedRepTypes={(memberFees[modalMember.id] ?? []).map(f => f.representationType)} onSave={fee => handleSaveFee(modalMember.id, fee)} onClose={handleCloseModal} />}
+      {modalState !== null && modalMember !== null && <FeeModal editingFee={modalState.editingFee} subtitle={`Configure fee for ${modalMember.name}.`} usedFeeKeys={(memberFees[modalMember.id] ?? []).map(f => feeKey(f.feeName, f.representationType))} scope="member" teamFeeNames={Array.from(new Set(teamFees.map(f => f.feeName))).filter(Boolean)} onSave={fee => handleSaveFee(modalMember.id, fee)} onClose={handleCloseModal} />}
 
       {/* Team Fee Modal */}
-      {showTeamFeeModal && <FeeModal editingFee={editingTeamFee} subtitle="Configure team-level fee details." usedRepTypes={teamFees.map(f => f.representationType)} onSave={handleSaveTeamFee} onClose={() => {
+      {showTeamFeeModal && <FeeModal editingFee={editingTeamFee} subtitle="Configure team-level fee details." usedFeeKeys={teamFees.map(f => feeKey(f.feeName, f.representationType))} scope="team" onSave={handleSaveTeamFee} onClose={() => {
         setShowTeamFeeModal(false);
         setEditingTeamFee(null);
       }} />}
