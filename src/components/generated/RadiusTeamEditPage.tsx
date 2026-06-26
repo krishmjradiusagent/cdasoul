@@ -16,6 +16,13 @@ interface TeamMember {
   preRadiusProgress: number;
   progressToInternal: number;
 }
+interface SlidingTier {
+  tierId: string;
+  notLessThanEnabled: boolean;
+  notLessThan: string;
+  notToExceedEnabled: boolean;
+  notToExceed: string;
+}
 interface RadiusFee {
   feeId: string;
   feeName: string;
@@ -25,10 +32,11 @@ interface RadiusFee {
   percentAmount: string;
   whenApplied: "Pre-Split" | "Post-Split";
   feePayer: "Team" | "Agent";
-  coAgentSplits: "Split equally" | "Proportional to split" | "Higher-cap agent pays";
+  coAgentSplits: "Split equally" | "Agent pays" | "Proportionate to allocation";
   payableTo: "Radius" | "Other";
   payableName: string;
   slidingScale: boolean;
+  slidingTiers: SlidingTier[];
   contributesToCap: boolean;
 }
 const blankFee = (): Omit<RadiusFee, "feeId"> => ({
@@ -43,7 +51,15 @@ const blankFee = (): Omit<RadiusFee, "feeId"> => ({
   payableTo: "Radius",
   payableName: "Radius",
   slidingScale: false,
+  slidingTiers: [],
   contributesToCap: false
+});
+const blankTier = (): SlidingTier => ({
+  tierId: `tier-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+  notLessThanEnabled: false,
+  notLessThan: "",
+  notToExceedEnabled: false,
+  notToExceed: ""
 });
 const formatFeeAmount = (fee: RadiusFee): string => {
   if (fee.feeType === "Flat Fee") return fee.flatAmount ? `$${fee.flatAmount}` : "—";
@@ -101,7 +117,7 @@ const REPRESENTATION_TYPE_OPTIONS: RadiusFee["representationType"][] = ["Buyer",
 const FEE_TYPE_OPTIONS: RadiusFee["feeType"][] = ["Flat Fee", "Percentage"];
 const WHEN_APPLIED_OPTIONS: RadiusFee["whenApplied"][] = ["Pre-Split", "Post-Split"];
 const FEE_PAYER_OPTIONS: RadiusFee["feePayer"][] = ["Team", "Agent"];
-const CO_AGENT_SPLIT_OPTIONS: RadiusFee["coAgentSplits"][] = ["Split equally", "Proportional to split", "Higher-cap agent pays"];
+const CO_AGENT_SPLIT_OPTIONS: RadiusFee["coAgentSplits"][] = ["Split equally", "Agent pays", "Proportionate to allocation"];
 
 // --- Fee Modal (shared) ---
 
@@ -273,7 +289,43 @@ const FeeModal = ({ editingFee, subtitle, usedFeeKeys = [], scope = "team", team
           </div>
 
           {/* Sliding Scale toggle */}
-          <ToggleRow label="Sliding Scale" hint="Enable tiered fee values." value={fee.slidingScale} onChange={v => update("slidingScale", v)} />
+          <ToggleRow label="Sliding Scale" hint="Enable tiered fee values." value={fee.slidingScale} onChange={v => {
+            update("slidingScale", v);
+            if (v && fee.slidingTiers.length === 0) update("slidingTiers", [blankTier()]);
+          }} />
+          {fee.slidingScale && (
+            <div className="flex flex-col gap-3 border border-gray-200 rounded-md p-3 bg-gray-50/40">
+              <button type="button" onClick={() => update("slidingTiers", [...fee.slidingTiers, blankTier()])} className="w-full border border-dashed border-gray-300 rounded-md py-2.5 text-sm font-medium text-gray-700 hover:bg-white hover:border-gray-400 transition-colors flex items-center justify-center gap-1.5">
+                <Plus className="w-4 h-4" />
+                <span>Add Tier</span>
+              </button>
+              {fee.slidingTiers.map((tier, idx) => (
+                <div key={tier.tierId} className="flex items-center gap-3 flex-wrap">
+                  <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                    <input type="checkbox" checked={tier.notLessThanEnabled} onChange={e => update("slidingTiers", fee.slidingTiers.map((t, i) => i === idx ? { ...t, notLessThanEnabled: e.target.checked } : t))} className="w-4 h-4 rounded border-gray-300 text-[#5A5FF2] focus:ring-[#5A5FF2]" />
+                    <span>Not less than</span>
+                  </label>
+                  <div className={cn("flex items-center border rounded overflow-hidden bg-white transition-all flex-1 min-w-[120px]", tier.notLessThanEnabled ? "border-gray-200 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100" : "border-gray-100 opacity-50")}>
+                    <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none">$</span>
+                    <input type="number" disabled={!tier.notLessThanEnabled} value={tier.notLessThan} onChange={e => update("slidingTiers", fee.slidingTiers.map((t, i) => i === idx ? { ...t, notLessThan: e.target.value } : t))} placeholder="0" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0 disabled:cursor-not-allowed" />
+                  </div>
+                  <label className="flex items-center gap-1.5 text-xs text-gray-700">
+                    <input type="checkbox" checked={tier.notToExceedEnabled} onChange={e => update("slidingTiers", fee.slidingTiers.map((t, i) => i === idx ? { ...t, notToExceedEnabled: e.target.checked } : t))} className="w-4 h-4 rounded border-gray-300 text-[#5A5FF2] focus:ring-[#5A5FF2]" />
+                    <span>Not to exceed</span>
+                  </label>
+                  <div className={cn("flex items-center border rounded overflow-hidden bg-white transition-all flex-1 min-w-[120px]", tier.notToExceedEnabled ? "border-gray-200 focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100" : "border-gray-100 opacity-50")}>
+                    <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none">$</span>
+                    <input type="number" disabled={!tier.notToExceedEnabled} value={tier.notToExceed} onChange={e => update("slidingTiers", fee.slidingTiers.map((t, i) => i === idx ? { ...t, notToExceed: e.target.value } : t))} placeholder="0" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0 disabled:cursor-not-allowed" />
+                  </div>
+                  {fee.slidingTiers.length > 1 && (
+                    <button type="button" onClick={() => update("slidingTiers", fee.slidingTiers.filter((_, i) => i !== idx))} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Remove tier">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Contributes to Cap toggle */}
           <ToggleRow label="Contributes to Cap" hint="Count toward cap." value={fee.contributesToCap} onChange={v => update("contributesToCap", v)} />
@@ -565,7 +617,12 @@ const TeamTable = ({
                           <td className="px-3 py-2 text-gray-800 font-medium">{fee.feeName || "—"}</td>
                           <td className="px-3 py-2 text-gray-600">{fee.representationType}</td>
                           <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
-                          <td className="px-3 py-2 text-gray-600">{formatFeeAmount(fee)}</td>
+                          <td className="px-3 py-2 text-gray-600">
+                            <div className="flex items-center gap-1.5">
+                              <span>{formatFeeAmount(fee)}</span>
+                              {fee.slidingScale && <span className="px-1.5 py-0 text-[10px] font-medium bg-indigo-50 text-[#5A5FF2] rounded">Tiered</span>}
+                            </div>
+                          </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-end gap-0.5">
                               <button type="button" onClick={() => onEditFee(member.id, fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit fee">
@@ -759,7 +816,12 @@ export const RadiusTeamEditPage: React.FC = () => {
                           <td className="px-3 py-2 text-gray-800 font-medium">{fee.feeName || "—"}</td>
                           <td className="px-3 py-2 text-gray-600">{fee.representationType}</td>
                           <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
-                          <td className="px-3 py-2 text-gray-600">{formatFeeAmount(fee)}</td>
+                          <td className="px-3 py-2 text-gray-600">
+                            <div className="flex items-center gap-1.5">
+                              <span>{formatFeeAmount(fee)}</span>
+                              {fee.slidingScale && <span className="px-1.5 py-0 text-[10px] font-medium bg-indigo-50 text-[#5A5FF2] rounded">Tiered</span>}
+                            </div>
+                          </td>
                           <td className="px-3 py-2">
                             <div className="flex items-center justify-end gap-0.5">
                               <button type="button" onClick={() => handleOpenEditTeamFee(fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit team fee">
