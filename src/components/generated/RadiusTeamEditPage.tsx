@@ -99,7 +99,6 @@ const FEE_TYPE_OPTIONS: RadiusFee["feeType"][] = ["Flat Fee", "Percentage"];
 const WHEN_APPLIED_OPTIONS: RadiusFee["whenApplied"][] = ["Pre-Split", "Post-Split"];
 const FEE_PAYER_OPTIONS: RadiusFee["feePayer"][] = ["Team", "Agent"];
 const CO_AGENT_SPLIT_OPTIONS: RadiusFee["coAgentSplits"][] = ["Split equally", "Proportional to split", "Higher-cap agent pays"];
-const PAYABLE_TO_OPTIONS: RadiusFee["payableTo"][] = ["Radius", "Other"];
 
 // --- Fee Modal (shared) ---
 
@@ -198,21 +197,17 @@ const FeeModal = ({ editingFee, subtitle, onSave, onClose }: FeeModalProps) => {
             </div>
           </div>
 
-          {/* Payable To + Payable Name */}
+          {/* Payable To + Payable Name (locked) */}
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-gray-800">Payable To</label>
-              <div className="relative">
-                <select value={fee.payableTo} onChange={e => update("payableTo", e.target.value as RadiusFee["payableTo"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                  {PAYABLE_TO_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
-              </div>
+              <div className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-500 bg-gray-50 cursor-not-allowed select-none">Radius</div>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-gray-800">Payable Name</label>
-              <input type="text" value={fee.payableName} onChange={e => update("payableName", e.target.value)} placeholder="Radius" className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-gray-300 transition-all" />
+              <div className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-500 bg-gray-50 cursor-not-allowed select-none">Radius</div>
             </div>
+            <p className="col-span-2 text-xs text-gray-500 -mt-1">Payable to Radius — this is a Radius fee.</p>
           </div>
 
           {/* Sliding Scale toggle */}
