@@ -619,8 +619,11 @@ const TeamTable = ({
                           <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
                           <td className="px-3 py-2 text-gray-600">
                             <div className="flex items-center gap-1.5">
-                              <span>{formatFeeAmount(fee)}</span>
-                              {fee.slidingScale && <span className="px-1.5 py-0 text-[10px] font-medium bg-indigo-50 text-[#5A5FF2] rounded">Tiered</span>}
+                              {fee.slidingScale ? (
+                                <span className="px-1.5 py-0 text-[10px] font-medium bg-indigo-50 text-[#5A5FF2] rounded">Tiered</span>
+                              ) : (
+                                <span>{formatFeeAmount(fee)}</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-3 py-2">
@@ -818,8 +821,11 @@ export const RadiusTeamEditPage: React.FC = () => {
                           <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
                           <td className="px-3 py-2 text-gray-600">
                             <div className="flex items-center gap-1.5">
-                              <span>{formatFeeAmount(fee)}</span>
-                              {fee.slidingScale && <span className="px-1.5 py-0 text-[10px] font-medium bg-indigo-50 text-[#5A5FF2] rounded">Tiered</span>}
+                              {fee.slidingScale ? (
+                                <span className="px-1.5 py-0 text-[10px] font-medium bg-indigo-50 text-[#5A5FF2] rounded">Tiered</span>
+                              ) : (
+                                <span>{formatFeeAmount(fee)}</span>
+                              )}
                             </div>
                           </td>
                           <td className="px-3 py-2">
