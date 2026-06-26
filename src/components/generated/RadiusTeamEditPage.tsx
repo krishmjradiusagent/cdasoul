@@ -16,25 +16,37 @@ interface TeamMember {
   preRadiusProgress: number;
   progressToInternal: number;
 }
-interface RepAmount {
-  feeType: string;
-  flat: string;
-  percent: string;
-}
 interface RadiusFee {
   feeId: string;
   feeName: string;
-  representationTypes: string[];
-  whoPays: string;
-  commissionBreakdownType: string;
-  amounts: Record<string, RepAmount>;
+  feeType: "Flat Fee" | "Percentage";
+  flatAmount: string;
+  percentAmount: string;
+  whenApplied: "Pre-Split" | "Post-Split";
+  feePayer: "Team" | "Agent";
+  coAgentSplits: "Split equally" | "Proportional to split" | "Higher-cap agent pays";
+  payableTo: "Radius" | "Other";
+  payableName: string;
+  slidingScale: boolean;
+  contributesToCap: boolean;
 }
-interface AuditFee {
-  representationTypes: string[];
-  whoPays: string;
-  amounts: Record<string, RepAmount>;
-}
-const blankAmt = (): RepAmount => ({ feeType: "Flat", flat: "", percent: "" });
+const blankFee = (): Omit<RadiusFee, "feeId"> => ({
+  feeName: "",
+  feeType: "Flat Fee",
+  flatAmount: "",
+  percentAmount: "",
+  whenApplied: "Pre-Split",
+  feePayer: "Team",
+  coAgentSplits: "Split equally",
+  payableTo: "Radius",
+  payableName: "Radius",
+  slidingScale: false,
+  contributesToCap: false
+});
+const formatFeeAmount = (fee: RadiusFee): string => {
+  if (fee.feeType === "Flat Fee") return fee.flatAmount ? `$${fee.flatAmount}` : "—";
+  return fee.percentAmount ? `${fee.percentAmount}%` : "—";
+};
 
 // --- Mock Data ---
 
@@ -83,479 +95,160 @@ const TEAM_MEMBERS_DATA: TeamMember[] = [{
   preRadiusProgress: 0,
   progressToInternal: 0
 }];
-const WHO_PAYS_OPTIONS = ["Agent Pays", "Team Lead Pays"];
-const COMMISSION_BREAKDOWN_OPTIONS = [{
-  value: "Full Transparency",
-  label: "Full Transparency"
-}, {
-  value: "Radius Split Hidden",
-  label: "Radius Split Hidden"
-}, {
-  value: "Team Split Hidden",
-  label: "Team Split Hidden"
-}, {
-  value: "Gross",
-  label: "Gross"
-}];
-const FEE_TYPE_OPTIONS = ["Flat", "Percentage", "Both"];
-const REPRESENTATION_TYPE_OPTIONS = ["Buyer", "Seller", "Landlord", "Tenant"];
+const FEE_TYPE_OPTIONS: RadiusFee["feeType"][] = ["Flat Fee", "Percentage"];
+const WHEN_APPLIED_OPTIONS: RadiusFee["whenApplied"][] = ["Pre-Split", "Post-Split"];
+const FEE_PAYER_OPTIONS: RadiusFee["feePayer"][] = ["Team", "Agent"];
+const CO_AGENT_SPLIT_OPTIONS: RadiusFee["coAgentSplits"][] = ["Split equally", "Proportional to split", "Higher-cap agent pays"];
+const PAYABLE_TO_OPTIONS: RadiusFee["payableTo"][] = ["Radius", "Other"];
 
-// --- Rep Type Rules ---
-// Buyer & Seller are in one category; Landlord & Tenant are in another.
-// Within-category multi-select is allowed. Cross-category is not.
-const REP_CATEGORY: Record<string, "residential" | "rental"> = {
-  Buyer: "residential",
-  Seller: "residential",
-  Landlord: "rental",
-  Tenant: "rental"
-};
+// --- Fee Modal (shared) ---
 
-// Returns all types claimed by a fee list (used to prevent duplicates / overlaps)
-const getUsedTypes = (fees: RadiusFee[], excludeFeeId?: string): string[] => {
-  const used: string[] = [];
-  fees.forEach(fee => {
-    if (fee.feeId !== excludeFeeId) {
-      fee.representationTypes.forEach(t => {
-        if (!used.includes(t)) used.push(t);
-      });
-    }
-  });
-  return used;
-};
-
-// Returns true when all 4 representation types are covered (no new non-overlapping fee possible)
-const allTypesCovered = (fees: RadiusFee[]): boolean => {
-  const used = getUsedTypes(fees);
-  return REPRESENTATION_TYPE_OPTIONS.every(t => used.includes(t));
-};
-
-// Given current selection and the already-used types (from other fees),
-// determine whether a rep type button should be disabled and why.
-const getRepTypeState = (type: string, currentSelection: string[], usedTypes: string[]): {
-  disabled: boolean;
-  reason: "used" | "category" | null;
-} => {
-  // Already used by another fee
-  if (usedTypes.includes(type)) {
-    return {
-      disabled: true,
-      reason: "used"
-    };
-  }
-  return {
-    disabled: false,
-    reason: null
-  };
-};
-
-// --- Per-Rep Amount Inputs ---
-
-interface PerRepAmountInputsProps {
-  reps: string[];
-  amounts: Record<string, RepAmount>;
-  setRepAmt: (rep: string, key: keyof RepAmount, val: string) => void;
-}
-const PerRepAmountInputs = ({ reps, amounts, setRepAmt }: PerRepAmountInputsProps) => {
-  if (reps.length === 0) {
-    return <p className="text-xs text-gray-400 italic">Select at least one representation type to set up a fee.</p>;
-  }
-  return <div className="flex flex-col gap-5">
-      {reps.map(rep => {
-      const a = amounts[rep] ?? blankAmt();
-      const ft = a.feeType || "Flat";
-      return <div key={rep} className="flex flex-col gap-3 border border-gray-200 rounded-md p-3 bg-gray-50/40">
-            <div className="text-xs font-bold text-gray-700 uppercase tracking-wider">{rep}</div>
-            <div className="flex flex-col gap-2">
-              <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Fee Type</label>
-              <div className="relative">
-                <select value={ft} onChange={e => setRepAmt(rep, "feeType", e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                  {FEE_TYPE_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
-                </div>
-              </div>
-            </div>
-            {ft === "Both" ? <div className="flex gap-3">
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Flat Amount</label>
-                  <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                    <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                    <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                  </div>
-                </div>
-                <div className="flex flex-col gap-2 flex-1">
-                  <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Percentage</label>
-                  <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                    <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
-                    <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
-                  </div>
-                </div>
-              </div> : ft === "Flat" ? <div className="flex flex-col gap-2">
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Flat Amount</label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none font-medium">$</span>
-                  <input type="number" value={a.flat} onChange={e => setRepAmt(rep, "flat", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-                </div>
-              </div> : <div className="flex flex-col gap-2">
-                <label className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Percentage</label>
-                <div className="flex items-center border border-gray-200 rounded overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all bg-white">
-                  <input type="number" value={a.percent} onChange={e => setRepAmt(rep, "percent", e.target.value)} placeholder="0.00" className="flex-1 px-3 py-2 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300" />
-                  <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none font-medium">%</span>
-                </div>
-              </div>}
-          </div>;
-    })}
-    </div>;
-};
-
-// --- Modal ---
-
-interface RadiusFeeModalProps {
-  memberId: string;
-  memberName: string;
+interface FeeModalProps {
   editingFee: RadiusFee | null;
-  usedTypes: string[];
-  onSave: (memberId: string, fee: RadiusFee) => void;
+  subtitle?: string;
+  onSave: (fee: RadiusFee) => void;
   onClose: () => void;
 }
-const RadiusFeeModal = ({
-  memberId,
-  memberName,
-  editingFee,
-  usedTypes,
-  onSave,
-  onClose
-}: RadiusFeeModalProps) => {
+const FeeModal = ({ editingFee, subtitle, onSave, onClose }: FeeModalProps) => {
   const isEditing = editingFee !== null;
-  const [feeName, setFeeName] = React.useState<string>(editingFee?.feeName ?? "");
-  const [representationTypes, setRepresentationTypes] = React.useState<string[]>(editingFee?.representationTypes ?? []);
-  const [whoPays, setWhoPays] = React.useState<string>(editingFee?.whoPays ?? "Agent Pays");
-  const [commissionBreakdownType, setCommissionBreakdownType] = React.useState<string>(editingFee?.commissionBreakdownType ?? "Full Transparency");
-  const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(editingFee?.amounts ?? {});
-  const toggleRepType = (type: string) => {
-    const {
-      disabled
-    } = getRepTypeState(type, representationTypes, usedTypes);
-    if (disabled && !representationTypes.includes(type)) return;
-    const isOn = representationTypes.includes(type);
-    if (isOn && representationTypes.length === 1) return;
-    setRepresentationTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
-    setAmounts(prev => {
-      const next = { ...prev };
-      if (isOn) delete next[type];
-      else if (!next[type]) next[type] = blankAmt();
-      return next;
-    });
-  };
-  const setRepAmt = (rep: string, key: keyof RepAmount, val: string) => {
-    setAmounts(prev => ({ ...prev, [rep]: { ...(prev[rep] ?? blankAmt()), [key]: val } }));
-  };
-  const canSave = representationTypes.length > 0;
+  const [fee, setFee] = React.useState<RadiusFee>(() => editingFee ?? { feeId: `fee-${Date.now()}`, ...blankFee() });
+  const update = <K extends keyof RadiusFee>(key: K, val: RadiusFee[K]) =>
+    setFee(prev => ({ ...prev, [key]: val }));
+  const canSave = fee.feeName.trim().length > 0;
   const handleSave = () => {
     if (!canSave) return;
-    const cleanAmounts: Record<string, RepAmount> = {};
-    representationTypes.forEach(r => { cleanAmounts[r] = amounts[r] ?? blankAmt(); });
-    onSave(memberId, {
-      feeId: editingFee?.feeId ?? `fee-${Date.now()}`,
-      feeName,
-      representationTypes,
-      whoPays,
-      commissionBreakdownType,
-      amounts: cleanAmounts
-    });
+    onSave(fee);
   };
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => {
     if (e.target === e.currentTarget) onClose();
   }}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
-          <div>
-            <h3 className="text-base font-bold text-gray-900">
-              {isEditing ? "Edit Radius Fee" : "Add Radius Fee"}
-            </h3>
-            <p className="text-xs text-gray-400 mt-0.5">{memberName}</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors" aria-label="Close modal">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="px-6 py-6 flex flex-col gap-6 overflow-y-auto">
-          {/* Representation Type */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Representation Type
-            </label>
-            <div className="flex gap-2 flex-wrap">
-              {REPRESENTATION_TYPE_OPTIONS.map(type => {
-              const isSelected = representationTypes.includes(type);
-              const {
-                disabled,
-                reason
-              } = getRepTypeState(type, representationTypes, usedTypes);
-              const isDisabled = disabled && !isSelected;
-              return <button key={type} type="button" onClick={() => toggleRepType(type)} disabled={isDisabled} title={reason === "used" ? "Already used by another fee" : reason === "category" ? "Cannot mix Buyer/Seller with Landlord/Tenant" : undefined} className={cn("px-4 py-2 rounded-full text-sm font-medium border transition-all", isSelected ? "bg-[#2196F3] text-white border-[#2196F3] shadow-sm" : isDisabled ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50")}>
-                
-                  {type}
-                </button>;
-            })}
-            </div>
-          </div>
-
-          {/* Who Pays */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Who Pays
-            </label>
-            <div className="relative">
-              <select value={whoPays} onChange={e => setWhoPays(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {WHO_PAYS_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Per-representation Fee Type + Amount */}
-          <PerRepAmountInputs reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
-        </div>
-
-        {/* Modal Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-100 flex-shrink-0">
-          <button type="button" onClick={onClose} className="px-5 py-2 rounded border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-100 transition-colors">
-            Cancel
-          </button>
-          <button type="button" onClick={handleSave} className="px-5 py-2 rounded bg-[#2196F3] text-white text-sm font-semibold hover:bg-blue-600 transition-colors shadow-sm">
-            Save
-          </button>
-        </div>
-      </div>
-    </div>;
-};
-
-// --- Audit Fee Modal ---
-
-interface AuditFeeModalProps {
-  currentFee: AuditFee;
-  onSave: (fee: AuditFee) => void;
-  onClose: () => void;
-}
-const AuditFeeModal = ({
-  currentFee,
-  onSave,
-  onClose
-}: AuditFeeModalProps) => {
-  const [representationTypes, setRepresentationTypes] = React.useState<string[]>(currentFee.representationTypes);
-  const [whoPays, setWhoPays] = React.useState<string>(currentFee.whoPays);
-  const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(currentFee.amounts ?? {});
-  const toggleRepType = (type: string) => {
-    const isOn = representationTypes.includes(type);
-    if (isOn && representationTypes.length === 1) return;
-    setRepresentationTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
-    setAmounts(prev => {
-      const next = { ...prev };
-      if (isOn) delete next[type];
-      else if (!next[type]) next[type] = blankAmt();
-      return next;
-    });
-  };
-  const setRepAmt = (rep: string, key: keyof RepAmount, val: string) => {
-    setAmounts(prev => ({ ...prev, [rep]: { ...(prev[rep] ?? blankAmt()), [key]: val } }));
-  };
-  const handleSave = () => {
-    if (representationTypes.length === 0) return;
-    const cleanAmounts: Record<string, RepAmount> = {};
-    representationTypes.forEach(r => { cleanAmounts[r] = amounts[r] ?? blankAmt(); });
-    onSave({
-      representationTypes,
-      whoPays,
-      amounts: cleanAmounts
-    });
-  };
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => {
-    if (e.target === e.currentTarget) onClose();
-  }}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
-          <h3 className="text-base font-bold text-gray-900">Audit Fee</h3>
+        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h3 className="text-lg font-bold text-gray-900">{isEditing ? "Edit Fee" : "Add Fee"}</h3>
+            <p className="text-sm text-gray-400 mt-0.5">{subtitle ?? "Configure fee type details."}</p>
+          </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors" aria-label="Close modal">
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-6 flex flex-col gap-6 overflow-y-auto">
-          {/* Representation Type */}
+        <div className="px-6 py-6 flex flex-col gap-5 overflow-y-auto">
+          {/* Fee Name */}
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Representation Type
-            </label>
-            <div className="flex gap-2 flex-wrap">
-              {REPRESENTATION_TYPE_OPTIONS.map(type => {
-              const isSelected = representationTypes.includes(type);
-              return <button key={type} type="button" onClick={() => toggleRepType(type)} className={cn("px-4 py-2 rounded-full text-sm font-medium border transition-all", isSelected ? "bg-[#2196F3] text-white border-[#2196F3] shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50")}>
-                    {type}
-                  </button>;
-            })}
+            <label className="text-sm font-semibold text-gray-800">Fee Name</label>
+            <input type="text" value={fee.feeName} onChange={e => update("feeName", e.target.value)} placeholder="e.g., Transaction Coordinator Fee" className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-gray-300 transition-all" />
+          </div>
+
+          {/* Fee Type + Amount */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-gray-800">Fee Type</label>
+              <div className="relative">
+                <select value={fee.feeType} onChange={e => update("feeType", e.target.value as RadiusFee["feeType"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  {FEE_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-gray-800">{fee.feeType === "Flat Fee" ? "Flat Fee" : "Percentage"}</label>
+              {fee.feeType === "Flat Fee" ? <div className="flex items-center border border-gray-200 rounded overflow-hidden bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none">$</span>
+                <input type="number" value={fee.flatAmount} onChange={e => update("flatAmount", e.target.value)} placeholder="495" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
+              </div> : <div className="flex items-center border border-gray-200 rounded overflow-hidden bg-white focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
+                <input type="number" value={fee.percentAmount} onChange={e => update("percentAmount", e.target.value)} placeholder="1.5" className="flex-1 px-3 py-2.5 text-sm text-gray-800 outline-none bg-white placeholder:text-gray-300 min-w-0" />
+                <span className="px-3 py-2.5 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none">%</span>
+              </div>}
             </div>
           </div>
 
-          {/* Who Pays */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Who Pays
-            </label>
-            <div className="relative">
-              <select value={whoPays} onChange={e => setWhoPays(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {WHO_PAYS_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+          {/* When Applied + Fee Payer + Co-Agent Splits */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-gray-800">When Applied</label>
+              <div className="relative">
+                <select value={fee.whenApplied} onChange={e => update("whenApplied", e.target.value as RadiusFee["whenApplied"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  {WHEN_APPLIED_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-gray-800">Fee Payer</label>
+              <div className="relative">
+                <select value={fee.feePayer} onChange={e => update("feePayer", e.target.value as RadiusFee["feePayer"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  {FEE_PAYER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-gray-800">Co-Agent Splits</label>
+              <div className="relative">
+                <select value={fee.coAgentSplits} onChange={e => update("coAgentSplits", e.target.value as RadiusFee["coAgentSplits"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  {CO_AGENT_SPLIT_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
               </div>
             </div>
           </div>
 
-          {/* Per-representation Fee Type + Amount */}
-          <PerRepAmountInputs reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
+          {/* Payable To + Payable Name */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-gray-800">Payable To</label>
+              <div className="relative">
+                <select value={fee.payableTo} onChange={e => update("payableTo", e.target.value as RadiusFee["payableTo"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                  {PAYABLE_TO_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-gray-800">Payable Name</label>
+              <input type="text" value={fee.payableName} onChange={e => update("payableName", e.target.value)} placeholder="Radius" className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-gray-300 transition-all" />
+            </div>
+          </div>
+
+          {/* Sliding Scale toggle */}
+          <ToggleRow label="Sliding Scale" hint="Enable tiered fee values." value={fee.slidingScale} onChange={v => update("slidingScale", v)} />
+
+          {/* Contributes to Cap toggle */}
+          <ToggleRow label="Contributes to Cap" hint="Count toward cap." value={fee.contributesToCap} onChange={v => update("contributesToCap", v)} />
         </div>
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-100 flex-shrink-0">
-          <button type="button" onClick={onClose} className="px-5 py-2 rounded border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-100 transition-colors">
-            Cancel
-          </button>
-          <button type="button" onClick={handleSave} className="px-5 py-2 rounded bg-[#2196F3] text-white text-sm font-semibold hover:bg-blue-600 transition-colors shadow-sm">
-            Save
-          </button>
+          <button type="button" onClick={onClose} className="px-5 py-2 rounded border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-100 transition-colors">Cancel</button>
+          <button type="button" disabled={!canSave} onClick={handleSave} className={cn("px-5 py-2 rounded text-white text-sm font-semibold transition-colors shadow-sm", canSave ? "bg-[#5A5FF2] hover:bg-indigo-600" : "bg-gray-300 cursor-not-allowed")}>Save Fee Type</button>
         </div>
       </div>
     </div>;
 };
 
-// --- Team Radius Fee Modal ---
-
-interface TeamRadiusFeeModalProps {
-  editingFee: RadiusFee | null;
-  usedTypes: string[];
-  onSave: (fee: RadiusFee) => void;
-  onClose: () => void;
+interface ToggleRowProps {
+  label: string;
+  hint: string;
+  value: boolean;
+  onChange: (v: boolean) => void;
 }
-const TeamRadiusFeeModal = ({
-  editingFee,
-  usedTypes,
-  onSave,
-  onClose
-}: TeamRadiusFeeModalProps) => {
-  const isEditing = editingFee !== null;
-  const [feeName, setFeeName] = React.useState<string>(editingFee?.feeName ?? "");
-  const [representationTypes, setRepresentationTypes] = React.useState<string[]>(editingFee?.representationTypes ?? []);
-  const [whoPays, setWhoPays] = React.useState<string>(editingFee?.whoPays ?? "Agent Pays");
-  const [commissionBreakdownType, setCommissionBreakdownType] = React.useState<string>(editingFee?.commissionBreakdownType ?? "Full Transparency");
-  const [amounts, setAmounts] = React.useState<Record<string, RepAmount>>(editingFee?.amounts ?? {});
-  const toggleRepType = (type: string) => {
-    const {
-      disabled
-    } = getRepTypeState(type, representationTypes, usedTypes);
-    if (disabled && !representationTypes.includes(type)) return;
-    const isOn = representationTypes.includes(type);
-    if (isOn && representationTypes.length === 1) return;
-    setRepresentationTypes(prev => prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]);
-    setAmounts(prev => {
-      const next = { ...prev };
-      if (isOn) delete next[type];
-      else if (!next[type]) next[type] = blankAmt();
-      return next;
-    });
-  };
-  const setRepAmt = (rep: string, key: keyof RepAmount, val: string) => {
-    setAmounts(prev => ({ ...prev, [rep]: { ...(prev[rep] ?? blankAmt()), [key]: val } }));
-  };
-  const handleSave = () => {
-    if (representationTypes.length === 0) return;
-    const cleanAmounts: Record<string, RepAmount> = {};
-    representationTypes.forEach(r => { cleanAmounts[r] = amounts[r] ?? blankAmt(); });
-    onSave({
-      feeId: editingFee?.feeId ?? `team-fee-${Date.now()}`,
-      feeName,
-      representationTypes,
-      whoPays,
-      commissionBreakdownType,
-      amounts: cleanAmounts
-    });
-  };
-  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => {
-    if (e.target === e.currentTarget) onClose();
-  }}>
-      <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 overflow-hidden max-h-[90vh] flex flex-col">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 flex-shrink-0">
-          <h3 className="text-base font-bold text-gray-900">
-            {isEditing ? "Edit Radius Fee" : "Add Radius Fee"}
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1.5 rounded-md transition-colors" aria-label="Close modal">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="px-6 py-6 flex flex-col gap-6 overflow-y-auto">
-          {/* Representation Type */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Representation Type
-            </label>
-            <div className="flex gap-2 flex-wrap">
-              {REPRESENTATION_TYPE_OPTIONS.map(type => {
-              const isSelected = representationTypes.includes(type);
-              const {
-                disabled,
-                reason
-              } = getRepTypeState(type, representationTypes, usedTypes);
-              const isDisabled = disabled && !isSelected;
-              return <button key={type} type="button" onClick={() => toggleRepType(type)} disabled={isDisabled} title={reason === "used" ? "Already used by another fee" : reason === "category" ? "Cannot mix Buyer/Seller with Landlord/Tenant" : undefined} className={cn("px-4 py-2 rounded-full text-sm font-medium border transition-all", isSelected ? "bg-[#2196F3] text-white border-[#2196F3] shadow-sm" : isDisabled ? "bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed" : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:bg-gray-50")}>
-                
-                  {type}
-                </button>;
-            })}
-            </div>
-          </div>
-
-          {/* Who Pays */}
-          <div className="flex flex-col gap-2">
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
-              Who Pays
-            </label>
-            <div className="relative">
-              <select value={whoPays} onChange={e => setWhoPays(e.target.value)} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                {WHO_PAYS_OPTIONS.map(option => <option key={option} value={option}>{option}</option>)}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                <ChevronDown className="w-4 h-4 text-gray-400" />
-              </div>
-            </div>
-          </div>
-
-          {/* Per-representation Fee Type + Amount */}
-          <PerRepAmountInputs reps={representationTypes} amounts={amounts} setRepAmt={setRepAmt} />
-        </div>
-
-        {/* Modal Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-100 flex-shrink-0">
-          <button type="button" onClick={onClose} className="px-5 py-2 rounded border border-gray-300 text-gray-700 text-sm font-semibold hover:bg-gray-100 transition-colors">
-            Cancel
-          </button>
-          <button type="button" onClick={handleSave} className="px-5 py-2 rounded bg-[#2196F3] text-white text-sm font-semibold hover:bg-blue-600 transition-colors shadow-sm">
-            Save
-          </button>
-        </div>
-      </div>
-    </div>;
+const ToggleRow = ({ label, hint, value, onChange }: ToggleRowProps) => {
+  return <div className="flex items-center justify-between border border-gray-200 rounded-md px-4 py-3">
+    <div>
+      <div className="text-sm font-semibold text-gray-800">{label}</div>
+      <div className="text-xs text-gray-500 mt-0.5">{hint}</div>
+    </div>
+    <button type="button" role="switch" aria-checked={value} onClick={() => onChange(!value)} className={cn("relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1", value ? "bg-[#5A5FF2]" : "bg-gray-300")}>
+      <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform duration-200", value ? "translate-x-6" : "translate-x-1")} />
+    </button>
+  </div>;
 };
+
 
 // --- Sub-components ---
 
@@ -682,7 +375,7 @@ const TeamTable = ({
               Member Type
             </th>
             <th className="px-6 py-4 text-[13px] font-normal text-gray-500 uppercase tracking-tight whitespace-nowrap">
-              Radius Fee
+              Fees
             </th>
             <th className="px-6 py-4 text-[13px] font-normal text-gray-500 uppercase tracking-tight whitespace-nowrap" style={{
             display: "none"
@@ -723,7 +416,6 @@ const TeamTable = ({
           const isTeamMember = member.memberType === "Team Member";
           const isOn = toggleStates[member.id] ?? false;
           const fees = memberFees[member.id] ?? [];
-          const canAddMore = !allTypesCovered(fees);
           const isExpanded = expandedFees[member.id] ?? false;
           return <React.Fragment key={member.id}><tr className="hover:bg-gray-50/50 transition-colors group">
                 <td className="px-6 py-6">
@@ -736,17 +428,17 @@ const TeamTable = ({
                     {member.memberType}
                   </span>
                 </td>
-                {/* Radius Fee Column */}
+                {/* Fee Column */}
                 <td className="px-6 py-6 min-w-[160px]">
                   {fees.length === 0 ? <button type="button" onClick={() => onAddFee(member.id)} className="flex items-center gap-1 text-[#2196F3] text-sm font-medium hover:underline transition-colors whitespace-nowrap">
                       <Plus className="w-3.5 h-3.5" />
-                      <span>Radius Fee</span>
+                      <span>Add Fee</span>
                     </button> : <div className="flex items-center gap-3">
                       <button type="button" onClick={() => toggleExpanded(member.id)} className="flex items-center gap-1.5 text-sm font-medium text-[#2196F3] hover:underline transition-colors whitespace-nowrap" aria-expanded={isExpanded}>
                         <span>{fees.length} {fees.length === 1 ? "fee" : "fees"}</span>
                         {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                       </button>
-                      {!isExpanded && canAddMore && <button type="button" onClick={() => onAddFee(member.id)} className="flex items-center gap-1 text-[#2196F3] text-sm font-medium hover:underline transition-colors whitespace-nowrap">
+                      {!isExpanded && <button type="button" onClick={() => onAddFee(member.id)} className="flex items-center gap-1 text-[#2196F3] text-sm font-medium hover:underline transition-colors whitespace-nowrap">
                         <Plus className="w-3.5 h-3.5" />
                         <span>Add</span>
                       </button>}
@@ -800,45 +492,40 @@ const TeamTable = ({
               </tr>
               {isExpanded && fees.length > 0 && <tr className="bg-gray-50/40">
                 <td colSpan={12} className="px-6 pt-3 pb-4">
-                  <div className="overflow-hidden border border-gray-200 rounded bg-white max-w-2xl">
+                  <div className="overflow-hidden border border-gray-200 rounded bg-white max-w-3xl">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50">
                         <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                          <th className="px-3 py-2">Representation</th>
+                          <th className="px-3 py-2">Fee Name</th>
+                          <th className="px-3 py-2">Payer</th>
                           <th className="px-3 py-2">Amount</th>
                           <th className="px-3 py-2 w-20 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {fees.flatMap(fee => {
-                      const reps = fee.representationTypes.length > 0 ? fee.representationTypes : ["—"];
-                      return reps.map(rep => {
-                        const amt = fee.amounts?.[rep];
-                        const amountLabel = formatRepAmount(amt);
-                        return <tr key={`${fee.feeId}-${rep}`}>
-                                  <td className="px-3 py-2 text-gray-800">{rep}</td>
-                                  <td className="px-3 py-2 text-gray-600">{amountLabel || "—"}</td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex items-center justify-end gap-0.5">
-                                      <button type="button" onClick={() => onEditFee(member.id, fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit fee">
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button type="button" onClick={() => onDeleteFee(member.id, fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete fee">
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>;
-                      });
-                    })}
+                        {fees.map(fee => <tr key={fee.feeId}>
+                          <td className="px-3 py-2 text-gray-800 font-medium">{fee.feeName || "—"}</td>
+                          <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
+                          <td className="px-3 py-2 text-gray-600">{formatFeeAmount(fee)}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <button type="button" onClick={() => onEditFee(member.id, fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit fee">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button type="button" onClick={() => onDeleteFee(member.id, fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete fee">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>)}
                       </tbody>
                     </table>
-                    {canAddMore && <div className="px-3 py-2 border-t border-gray-100">
+                    <div className="px-3 py-2 border-t border-gray-100">
                       <button type="button" onClick={() => onAddFee(member.id)} className="flex items-center gap-1 text-[#2196F3] text-xs font-medium hover:underline transition-colors">
                         <Plus className="w-3 h-3" />
                         <span>Add Fee</span>
                       </button>
-                    </div>}
+                    </div>
                   </div>
                 </td>
               </tr>}
@@ -862,52 +549,22 @@ const getInitialToggleStates = (): Record<string, boolean> => {
   });
   return states;
 };
-const formatRepAmount = (amt: RepAmount | undefined): string => {
-  const a = amt ?? blankAmt();
-  if (a.feeType === "Flat") return a.flat ? `$${a.flat}` : "";
-  if (a.feeType === "Percentage") return a.percent ? `${a.percent}%` : "";
-  if (a.feeType === "Both") {
-    if (!a.flat && !a.percent) return "";
-    return `$${a.flat || "0"} / ${a.percent || "0"}%`;
-  }
-  return "";
-};
-const getFeeAmountLabel = (fee: { representationTypes: string[]; amounts: Record<string, RepAmount> }): string => {
-  const parts: string[] = [];
-  fee.representationTypes.forEach(rep => {
-    const s = formatRepAmount(fee.amounts?.[rep]);
-    if (s) parts.push(`${rep} ${s}`);
-  });
-  return parts.join(" · ");
-};
 interface ModalState {
   memberId: string;
   editingFee: RadiusFee | null;
 }
 export const RadiusTeamEditPage: React.FC = () => {
-  const [whoPays, setWhoPays] = React.useState<string>("Agent Pays");
-  const [feeType, setFeeType] = React.useState<string>("Flat");
-  const [commissionBreakdownType, setCommissionBreakdownType] = React.useState<string>("Full Transparency CDA");
-  const [flatAmount, setFlatAmount] = React.useState<string>("");
-  const [percentAmount, setPercentAmount] = React.useState<string>("");
   const [toggleStates, setToggleStates] = React.useState<Record<string, boolean>>(getInitialToggleStates);
 
   // Multi-fee per-row state
   const [memberFees, setMemberFees] = React.useState<Record<string, RadiusFee[]>>({});
   const [modalState, setModalState] = React.useState<ModalState | null>(null);
 
-  // Team Radius Fee state
-  const [teamRadiusFees, setTeamRadiusFees] = React.useState<RadiusFee[]>([]);
-  const [showTeamRadiusFeeModal, setShowTeamRadiusFeeModal] = React.useState<boolean>(false);
+  // Team fee state
+  const [teamFees, setTeamFees] = React.useState<RadiusFee[]>([]);
+  const [showTeamFeeModal, setShowTeamFeeModal] = React.useState<boolean>(false);
   const [editingTeamFee, setEditingTeamFee] = React.useState<RadiusFee | null>(null);
 
-  // Audit Fee state (kept but not wired to UI)
-  const [showAuditFeeModal, setShowAuditFeeModal] = React.useState<boolean>(false);
-  const [auditFee, setAuditFee] = React.useState<AuditFee>({
-    representationTypes: [],
-    whoPays: "Agent Pays",
-    amounts: {}
-  });
   const handleToggle = (id: string) => {
     setToggleStates(prev => ({
       ...prev,
@@ -954,25 +611,21 @@ export const RadiusTeamEditPage: React.FC = () => {
     });
     setModalState(null);
   };
-  const handleSaveAuditFee = (fee: AuditFee) => {
-    setAuditFee(fee);
-    setShowAuditFeeModal(false);
-  };
 
-  // Team Radius Fee handlers
+  // Team fee handlers
   const handleOpenAddTeamFee = () => {
     setEditingTeamFee(null);
-    setShowTeamRadiusFeeModal(true);
+    setShowTeamFeeModal(true);
   };
   const handleOpenEditTeamFee = (fee: RadiusFee) => {
     setEditingTeamFee(fee);
-    setShowTeamRadiusFeeModal(true);
+    setShowTeamFeeModal(true);
   };
   const handleDeleteTeamFee = (feeId: string) => {
-    setTeamRadiusFees(prev => prev.filter(f => f.feeId !== feeId));
+    setTeamFees(prev => prev.filter(f => f.feeId !== feeId));
   };
   const handleSaveTeamFee = (fee: RadiusFee) => {
-    setTeamRadiusFees(prev => {
+    setTeamFees(prev => {
       const idx = prev.findIndex(f => f.feeId === fee.feeId);
       if (idx >= 0) {
         const updated = [...prev];
@@ -981,29 +634,10 @@ export const RadiusTeamEditPage: React.FC = () => {
       }
       return [...prev, fee];
     });
-    setShowTeamRadiusFeeModal(false);
+    setShowTeamFeeModal(false);
     setEditingTeamFee(null);
   };
   const modalMember = modalState !== null ? TEAM_MEMBERS_DATA.find(m => m.id === modalState.memberId) ?? null : null;
-
-  // Compute used types for the per-member modal (exclude the currently editing fee)
-  const modalMemberUsedTypes = React.useMemo(() => {
-    if (modalState === null) return [];
-    const fees = memberFees[modalState.memberId] ?? [];
-    return getUsedTypes(fees, modalState.editingFee?.feeId);
-  }, [modalState, memberFees]);
-
-  // Compute used types for the team fee modal (exclude the currently editing team fee)
-  const teamFeeUsedTypes = React.useMemo(() => {
-    return getUsedTypes(teamRadiusFees, editingTeamFee?.feeId);
-  }, [teamRadiusFees, editingTeamFee]);
-  const auditFeeLabel = React.useMemo(() => {
-    const label = getFeeAmountLabel(auditFee);
-    return label || null;
-  }, [auditFee]);
-
-  // Team fees: can add more only if not all types are covered
-  const teamAllCovered = allTypesCovered(teamRadiusFees);
   return <div className="min-h-screen bg-[#F4F7FA] font-sans text-gray-900 selection:bg-blue-100">
       <Navbar />
 
@@ -1029,13 +663,13 @@ export const RadiusTeamEditPage: React.FC = () => {
                     <input id="team-cap" type="text" placeholder="Enter team cap" className="border border-gray-200 rounded px-4 py-2 text-sm w-[200px] outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all" />
                   </div>
 
-                  {/* Team Radius Fee: label + pill button only */}
+                  {/* Team Fee: label + pill button only */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-gray-700">Team Radius Fee:</span>
-                    {!teamAllCovered && <button type="button" onClick={handleOpenAddTeamFee} className="flex items-center gap-1 text-sm font-medium border rounded-full px-4 py-1.5 transition-colors text-[#2196F3] border-[#2196F3] hover:bg-blue-50">
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add</span>
-                      </button>}
+                    <span className="text-sm font-semibold text-gray-700">Team Fee:</span>
+                    <button type="button" onClick={handleOpenAddTeamFee} className="flex items-center gap-1 text-sm font-medium border rounded-full px-4 py-1.5 transition-colors text-[#2196F3] border-[#2196F3] hover:bg-blue-50">
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
+                    </button>
                   </div>
 
                   <div className="ml-auto">
@@ -1046,105 +680,36 @@ export const RadiusTeamEditPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Row 2: Who Pays + Fee Type (hidden) */}
-                <div className="flex items-center gap-3 flex-wrap" style={{
-                display: "none"
-              }}>
-                  <label className="text-sm text-gray-800 whitespace-nowrap">
-                    <span>Radius Fee - Who Pays:</span>
-                  </label>
-                  <div className="relative">
-                    <select value={whoPays} onChange={e => setWhoPays(e.target.value)} className="appearance-none bg-white border border-gray-200 rounded px-3 py-2 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer min-w-[140px]">
-                      <option value="Agent Pays">Agent Pays</option>
-                      <option value="Team Lead Pays">Team Lead Pays</option>
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                      <ChevronDown className="w-4 h-4 text-gray-400" />
-                    </div>
-                  </div>
-
-                  <label className="text-sm text-gray-800 whitespace-nowrap">
-                    <span>Commission Breakdown Type:</span>
-                  </label>
-                  <div className="relative">
-                    <select value={commissionBreakdownType} onChange={e => setCommissionBreakdownType(e.target.value)} className="appearance-none bg-white border border-gray-200 rounded px-3 py-2 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer min-w-[200px]">
-                      <option value="Full Transparency CDA">Full Transparency</option>
-                      <option value="Radius Split Hidden CDA">Radius Split Hidden</option>
-                      <option value="Team Split Hidden CDA">Team Split Hidden</option>
-                      <option value="Gross CDA">Gross</option>
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                      <ChevronDown className="w-4 h-4 text-gray-400" />
-                    </div>
-                  </div>
-
-                  <label className="text-sm text-gray-800 whitespace-nowrap">
-                    <span>Fee Type:</span>
-                  </label>
-                  <div className="relative">
-                    <select value={feeType} onChange={e => setFeeType(e.target.value)} className="appearance-none bg-white border border-gray-200 rounded px-3 py-2 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer min-w-[160px]" style={{
-                    width: "50px",
-                    maxWidth: "50px"
-                  }}>
-                      <option value="Flat">Flat</option>
-                      <option value="Percent">% of Gross Commissions After Deductions</option>
-                      <option value="Both">Both</option>
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center">
-                      <ChevronDown className="w-4 h-4 text-gray-400" />
-                    </div>
-                  </div>
-
-                  {(feeType === "Flat" || feeType === "Both") && <div className="flex items-center border border-gray-200 rounded bg-white overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                      <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-r border-gray-200 select-none w-8 text-center">$</span>
-                      <input type="number" value={flatAmount} onChange={e => setFlatAmount(e.target.value)} placeholder="0.00" className="px-3 py-2 text-sm text-gray-800 outline-none bg-white w-[100px] placeholder:text-gray-300" />
-                    </div>}
-
-                  {(feeType === "Percent" || feeType === "Both") && <div className="flex items-center gap-2">
-                      <div className="flex items-center border border-gray-200 rounded bg-white overflow-hidden focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                        <input type="number" value={percentAmount} onChange={e => setPercentAmount(e.target.value)} placeholder="0.00" className="px-3 py-2 text-sm text-gray-800 outline-none bg-white w-[100px] placeholder:text-gray-300" />
-                        <span className="px-3 py-2 text-sm text-gray-400 bg-gray-50 border-l border-gray-200 select-none w-8 text-center">%</span>
-                      </div>
-                      {feeType === "Percent" && <span className="text-sm text-gray-600 whitespace-nowrap">
-                          <span>of Gross Commissions Deductions</span>
-                        </span>}
-                    </div>}
-                </div>
               </div>
 
-              {/* Team Radius Fee list */}
-              {teamRadiusFees.length > 0 && <div className="mb-6 border-t border-gray-100 pt-4">
+              {/* Team fee list */}
+              {teamFees.length > 0 && <div className="mb-6 border-t border-gray-100 pt-4">
                   <div className="overflow-hidden border border-gray-200 rounded">
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50">
                         <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
-                          <th className="px-3 py-2">Representation</th>
+                          <th className="px-3 py-2">Fee Name</th>
+                          <th className="px-3 py-2">Payer</th>
                           <th className="px-3 py-2">Amount</th>
                           <th className="px-3 py-2 w-20 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {teamRadiusFees.flatMap(fee => {
-                      const reps = fee.representationTypes.length > 0 ? fee.representationTypes : ["—"];
-                      return reps.map(rep => {
-                        const amt = fee.amounts?.[rep];
-                        const amountLabel = formatRepAmount(amt);
-                        return <tr key={`${fee.feeId}-${rep}`}>
-                                  <td className="px-3 py-2 text-gray-800">{rep}</td>
-                                  <td className="px-3 py-2 text-gray-600">{amountLabel || "—"}</td>
-                                  <td className="px-3 py-2">
-                                    <div className="flex items-center justify-end gap-0.5">
-                                      <button type="button" onClick={() => handleOpenEditTeamFee(fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit team radius fee">
-                                        <Pencil className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button type="button" onClick={() => handleDeleteTeamFee(fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete team radius fee">
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>;
-                      });
-                    })}
+                        {teamFees.map(fee => <tr key={fee.feeId}>
+                          <td className="px-3 py-2 text-gray-800 font-medium">{fee.feeName || "—"}</td>
+                          <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
+                          <td className="px-3 py-2 text-gray-600">{formatFeeAmount(fee)}</td>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center justify-end gap-0.5">
+                              <button type="button" onClick={() => handleOpenEditTeamFee(fee)} className="p-1 rounded text-gray-400 hover:text-[#2196F3] hover:bg-blue-50 transition-colors" aria-label="Edit team fee">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button type="button" onClick={() => handleDeleteTeamFee(fee.feeId)} className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors" aria-label="Delete team fee">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>)}
                       </tbody>
                     </table>
                   </div>
@@ -1171,16 +736,13 @@ export const RadiusTeamEditPage: React.FC = () => {
         </div>
       </main>
 
-      {/* Radius Fee Modal (per-member) */}
-      {modalState !== null && modalMember !== null && <RadiusFeeModal memberId={modalMember.id} memberName={modalMember.name} editingFee={modalState.editingFee} usedTypes={modalMemberUsedTypes} onSave={handleSaveFee} onClose={handleCloseModal} />}
+      {/* Fee Modal (per-member) */}
+      {modalState !== null && modalMember !== null && <FeeModal editingFee={modalState.editingFee} subtitle={`Configure fee for ${modalMember.name}.`} onSave={fee => handleSaveFee(modalMember.id, fee)} onClose={handleCloseModal} />}
 
-      {/* Team Radius Fee Modal */}
-      {showTeamRadiusFeeModal && <TeamRadiusFeeModal editingFee={editingTeamFee} usedTypes={teamFeeUsedTypes} onSave={handleSaveTeamFee} onClose={() => {
-      setShowTeamRadiusFeeModal(false);
-      setEditingTeamFee(null);
-    }} />}
-
-      {/* Audit Fee Modal (kept but unused by UI) */}
-      {showAuditFeeModal && <AuditFeeModal currentFee={auditFee} onSave={handleSaveAuditFee} onClose={() => setShowAuditFeeModal(false)} />}
+      {/* Team Fee Modal */}
+      {showTeamFeeModal && <FeeModal editingFee={editingTeamFee} subtitle="Configure team-level fee details." onSave={handleSaveTeamFee} onClose={() => {
+        setShowTeamFeeModal(false);
+        setEditingTeamFee(null);
+      }} />}
     </div>;
 };
