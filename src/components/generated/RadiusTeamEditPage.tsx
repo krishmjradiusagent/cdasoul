@@ -19,6 +19,7 @@ interface TeamMember {
 interface RadiusFee {
   feeId: string;
   feeName: string;
+  representationType: "Buyer" | "Seller" | "Landlord" | "Tenant";
   feeType: "Flat Fee" | "Percentage";
   flatAmount: string;
   percentAmount: string;
@@ -32,6 +33,7 @@ interface RadiusFee {
 }
 const blankFee = (): Omit<RadiusFee, "feeId"> => ({
   feeName: "",
+  representationType: "Buyer",
   feeType: "Flat Fee",
   flatAmount: "",
   percentAmount: "",
@@ -95,6 +97,7 @@ const TEAM_MEMBERS_DATA: TeamMember[] = [{
   preRadiusProgress: 0,
   progressToInternal: 0
 }];
+const REPRESENTATION_TYPE_OPTIONS: RadiusFee["representationType"][] = ["Buyer", "Seller", "Landlord", "Tenant"];
 const FEE_TYPE_OPTIONS: RadiusFee["feeType"][] = ["Flat Fee", "Percentage"];
 const WHEN_APPLIED_OPTIONS: RadiusFee["whenApplied"][] = ["Pre-Split", "Post-Split"];
 const FEE_PAYER_OPTIONS: RadiusFee["feePayer"][] = ["Team", "Agent"];
@@ -105,15 +108,18 @@ const CO_AGENT_SPLIT_OPTIONS: RadiusFee["coAgentSplits"][] = ["Split equally", "
 interface FeeModalProps {
   editingFee: RadiusFee | null;
   subtitle?: string;
+  usedRepTypes?: RadiusFee["representationType"][];
   onSave: (fee: RadiusFee) => void;
   onClose: () => void;
 }
-const FeeModal = ({ editingFee, subtitle, onSave, onClose }: FeeModalProps) => {
+const FeeModal = ({ editingFee, subtitle, usedRepTypes = [], onSave, onClose }: FeeModalProps) => {
   const isEditing = editingFee !== null;
-  const [fee, setFee] = React.useState<RadiusFee>(() => editingFee ?? { feeId: `fee-${Date.now()}`, ...blankFee() });
+  const defaultRep = (REPRESENTATION_TYPE_OPTIONS.find(r => !usedRepTypes.includes(r)) ?? "Buyer") as RadiusFee["representationType"];
+  const [fee, setFee] = React.useState<RadiusFee>(() => editingFee ?? { feeId: `fee-${Date.now()}`, ...blankFee(), representationType: defaultRep });
   const update = <K extends keyof RadiusFee>(key: K, val: RadiusFee[K]) =>
     setFee(prev => ({ ...prev, [key]: val }));
-  const canSave = fee.feeName.trim().length > 0;
+  const repAlreadyUsed = usedRepTypes.includes(fee.representationType) && fee.representationType !== editingFee?.representationType;
+  const canSave = fee.feeName.trim().length > 0 && !repAlreadyUsed;
   const handleSave = () => {
     if (!canSave) return;
     onSave(fee);
@@ -139,6 +145,20 @@ const FeeModal = ({ editingFee, subtitle, onSave, onClose }: FeeModalProps) => {
           <div className="flex flex-col gap-2">
             <label className="text-sm font-semibold text-gray-800">Fee Name</label>
             <input type="text" value={fee.feeName} onChange={e => update("feeName", e.target.value)} placeholder="e.g., Transaction Coordinator Fee" className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-gray-300 transition-all" />
+          </div>
+
+          {/* Representation Type */}
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold text-gray-800">Representation Type</label>
+            <div className="relative">
+              <select value={fee.representationType} onChange={e => update("representationType", e.target.value as RadiusFee["representationType"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
+                {REPRESENTATION_TYPE_OPTIONS.map(o => {
+                  const used = usedRepTypes.includes(o) && o !== editingFee?.representationType;
+                  return <option key={o} value={o} disabled={used}>{o}{used ? " — already added" : ""}</option>;
+                })}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
+            </div>
           </div>
 
           {/* Fee Type + Amount */}
@@ -170,12 +190,7 @@ const FeeModal = ({ editingFee, subtitle, onSave, onClose }: FeeModalProps) => {
           <div className="grid grid-cols-3 gap-4">
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-gray-800">When Applied</label>
-              <div className="relative">
-                <select value={fee.whenApplied} onChange={e => update("whenApplied", e.target.value as RadiusFee["whenApplied"])} className="w-full appearance-none bg-white border border-gray-200 rounded px-3 py-2.5 pr-8 text-sm text-gray-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all cursor-pointer">
-                  {WHEN_APPLIED_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-2 flex items-center"><ChevronDown className="w-4 h-4 text-gray-400" /></div>
-              </div>
+              <div className="w-full border border-gray-200 rounded px-3 py-2.5 text-sm text-gray-500 bg-gray-50 cursor-not-allowed select-none">Post-Split</div>
             </div>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-gray-800">Fee Payer</label>
@@ -492,6 +507,7 @@ const TeamTable = ({
                       <thead className="bg-gray-50">
                         <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
                           <th className="px-3 py-2">Fee Name</th>
+                          <th className="px-3 py-2">Representation</th>
                           <th className="px-3 py-2">Payer</th>
                           <th className="px-3 py-2">Amount</th>
                           <th className="px-3 py-2 w-20 text-right">Actions</th>
@@ -500,6 +516,7 @@ const TeamTable = ({
                       <tbody className="divide-y divide-gray-100">
                         {fees.map(fee => <tr key={fee.feeId}>
                           <td className="px-3 py-2 text-gray-800 font-medium">{fee.feeName || "—"}</td>
+                          <td className="px-3 py-2 text-gray-600">{fee.representationType}</td>
                           <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
                           <td className="px-3 py-2 text-gray-600">{formatFeeAmount(fee)}</td>
                           <td className="px-3 py-2">
@@ -684,6 +701,7 @@ export const RadiusTeamEditPage: React.FC = () => {
                       <thead className="bg-gray-50">
                         <tr className="text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
                           <th className="px-3 py-2">Fee Name</th>
+                          <th className="px-3 py-2">Representation</th>
                           <th className="px-3 py-2">Payer</th>
                           <th className="px-3 py-2">Amount</th>
                           <th className="px-3 py-2 w-20 text-right">Actions</th>
@@ -692,6 +710,7 @@ export const RadiusTeamEditPage: React.FC = () => {
                       <tbody className="divide-y divide-gray-100">
                         {teamFees.map(fee => <tr key={fee.feeId}>
                           <td className="px-3 py-2 text-gray-800 font-medium">{fee.feeName || "—"}</td>
+                          <td className="px-3 py-2 text-gray-600">{fee.representationType}</td>
                           <td className="px-3 py-2 text-gray-600">{fee.feePayer}</td>
                           <td className="px-3 py-2 text-gray-600">{formatFeeAmount(fee)}</td>
                           <td className="px-3 py-2">
@@ -732,10 +751,10 @@ export const RadiusTeamEditPage: React.FC = () => {
       </main>
 
       {/* Fee Modal (per-member) */}
-      {modalState !== null && modalMember !== null && <FeeModal editingFee={modalState.editingFee} subtitle={`Configure fee for ${modalMember.name}.`} onSave={fee => handleSaveFee(modalMember.id, fee)} onClose={handleCloseModal} />}
+      {modalState !== null && modalMember !== null && <FeeModal editingFee={modalState.editingFee} subtitle={`Configure fee for ${modalMember.name}.`} usedRepTypes={(memberFees[modalMember.id] ?? []).map(f => f.representationType)} onSave={fee => handleSaveFee(modalMember.id, fee)} onClose={handleCloseModal} />}
 
       {/* Team Fee Modal */}
-      {showTeamFeeModal && <FeeModal editingFee={editingTeamFee} subtitle="Configure team-level fee details." onSave={handleSaveTeamFee} onClose={() => {
+      {showTeamFeeModal && <FeeModal editingFee={editingTeamFee} subtitle="Configure team-level fee details." usedRepTypes={teamFees.map(f => f.representationType)} onSave={handleSaveTeamFee} onClose={() => {
         setShowTeamFeeModal(false);
         setEditingTeamFee(null);
       }} />}
